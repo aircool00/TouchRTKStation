@@ -8,7 +8,8 @@ apt-get update -y
 apt-get install -y qt5-default pyqt5-dev pyqt5-dev-tools
 
 # Install RTKLIB
-git clone -b demo5 https://github.com/rtklibexplorer/RTKLIB.git
+git clone -b rtklib_2.4.3 https://github.com/tomojitakasu/RTKLIB.git
+patch /home/pi/RTKLIB/src/stream.c /home/pi/TouchRTKStation/install/stream.patch
 cd ./RTKLIB/app/str2str/gcc/
 make
 cd ../../rtkrcv/gcc/
@@ -16,8 +17,8 @@ make
 
 # Install LCD Driver
 cd /home/pi/
-wget http://www.waveshare.com/w/upload/0/00/LCD-show-170703.tar.gz
-tar xzvf LCD*.tar.gz
+git clone https://github.com/goodtft/LCD-show.git
 cd ./LCD-show/
-chmod +x LCD4-show
-./LCD4-show
+cp -f ../TouchRTKStation/install/config-35-480X320.txt ./boot/
+chmod +x MPI3508_480_320-show
+./MPI3508_480_320-show

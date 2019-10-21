@@ -2,13 +2,18 @@
 """
 @author: Yusuke Takahashi, Taro Suzuki, Waseda University
 """
-import sys,os,shlex,glob,time,re
+import sys,os,shlex,glob,time,re,signal
+import datetime
 from subprocess import Popen,PIPE,check_output
 from PyQt5.QtWidgets import (QWidget, QPushButton,QHBoxLayout, QVBoxLayout,QCheckBox,QGroupBox,QScrollArea,
  QApplication,QSizePolicy,QMainWindow,QMessageBox,QDialog,QTabWidget,QComboBox,QLabel,QLineEdit,QFormLayout,QGridLayout)
 from PyQt5.QtGui import QFont,QColor,QPixmap
 from PyQt5 import QtCore
+from pyqtlet import L, MapWidget
 import telnetlib
+import statistics as st
+import math
+import numpy as np
 
 # Main Window
 class MainWindow(QMainWindow):
@@ -23,15 +28,15 @@ class MainWindow(QMainWindow):
     serial_stopbits = (['1 bit','2 bits'])    #[1 2]
     serial_flowcontrol = (['None','RTS/CTS']) #[off rtscts]
 
-    # ublox command file for Base/Rover mode
+    # ublox command file for Base mode
     ubxcmd = dirtrs+'/conf/ubx_m8t_bds_raw_1hz.cmd'
 
     # Default Base position configuration
     basepos_type = (['LLH','RTCM']) # for Rover
     basepos_itype = 1 # for Rover
-    basepos_lat = '35.0'
-    basepos_lon = '139.0'
-    basepos_hgt = '50.0'
+    basepos_lat = '38.195030'
+    basepos_lon = '140.884273'
+    basepos_hgt = '7.2'
 
     # Default Input stream configration
     input_iport= 2         # ttyACM0
@@ -48,10 +53,10 @@ class MainWindow(QMainWindow):
     corr_format = (['RTCM2','RTCM3','BINEX','UBX'])
     corr_iformat = 1
     corr_user = 'user'
-    corr_addr = 'test.net'
+    corr_addr = 'rtk2go.com'
     corr_port = '2101'
     corr_pw = 'password'
-    corr_mp = 'RTCM'
+    corr_mp = 'sendai_test'
 
     # Default Correction(Serial) stream configration
     corr2_flag = False
@@ -67,23 +72,24 @@ class MainWindow(QMainWindow):
     # Default Log/Solution stream configration
     log_flag = True
     sol_flag = True
-    dir = glob.glob('/media/*/*/') # Find USB memory
-    if len(dir)==0:
-        dir = [dirtrs+'/']
+    #dir = glob.glob('/media/*/*/') # Find USB memory
+    #if len(dir)==0:
+    #    dir = [dirtrs+'/']
+    dir = ['/media/pi/USB/']
     sol_filename = dir[0]+'%Y-%m%d-%h%M%S.pos'
     log_filename = dir[0]+'%Y-%m%d-%h%M%S.ubx'
 
     # Default Output stream configration
     output_flag = False
     output_type=(['TCP Server','NTRIP Server','NTRIP Caster'])
-    output_itype = 0    # TCP Server
+    output_itype = 1    # NTRIP Server
     output_format = (['UBX','RTCM3'])
-    output_iformat = 0  # UBX
+    output_iformat = 1  # RTCM3
     output_user = 'user'
-    output_addr = 'test.net'
+    output_addr = 'rtk2go.com'
     output_port = '2101'
-    output_pw = 'password'
-    output_mp = 'TRS'
+    output_pw = 'BETATEST'
+    output_mp = 'sendai_test'
 
     # Default Output(Serial) stream configration
     output2_flag = False
@@ -95,6 +101,11 @@ class MainWindow(QMainWindow):
     output2_iparity = 0      # None
     output2_istopbits = 0    # 1 bit
     output2_iflowcontrol = 0 # None
+
+    # Base position
+    lat = []
+    lon = []
+    alt = []
 
     def __init__(self):
         super().__init__()
@@ -109,14 +120,34 @@ class MainWindow(QMainWindow):
         self.main_w = MainWidget()
         self.setCentralWidget(self.main_w)
 
-        self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
-        # self.setGeometry(100, 100, 480, 320) # For debug
-        self.showFullScreen()
+        #self.setWindowFlags(QtCore.Qt.FramelessWindowHint)
+        #self.setGeometry(0, 50, 300, 200) # For debug
+        #self.showFullScreen()
+        self.window().showMaximized()
 
         self.show()
 
+    def calc_accuracy(self,ave_lat,ave_lon,ave_alt,se_lat,se_lon,se_alt):
+        a=6378137.0
+        f=1/298.257223563
+        acc_alt=se_alt*2
+        l_lat=a*(1-f*f)*math.pi/(648000*pow(1-f*f*pow(math.sin(math.radians(ave_lat)),2),3.0/2))
+        acc_lat=se_lat*3600*l_lat*2
+        l_lon = a * math.cos(math.radians(ave_lat)) * math.pi / (648000 * math.sqrt(1 - f * f * pow(math.sin(math.radians(ave_lat)), 2)))
+        acc_lon=se_lon*3600*l_lon*2
+        return (acc_lat,acc_lon,acc_alt)
+
+    def centerd_average(self,nums):
+          del nums[nums.index(min(nums))]
+          del nums[nums.index(max(nums))]
+          ave = st.mean(nums)
+          stdev = st.stdev(nums)
+          stder = stdev/math.sqrt(len(nums))
+          return (nums,ave,stder)
+
     # Dispaly status in rover mode
     def updateRover(self):
+        self.main_w.lTime.setText(datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
         rawsol=self.main_w.rtkrcvCommand(self.main_w.tn,'solution')
         print(rawsol)
         if len(rawsol)>34:
@@ -124,13 +155,47 @@ class MainWindow(QMainWindow):
             soltype=soltypes[0][1:-1].strip()
             sols=re.findall(r'\d*\.\d*',rawsol)
 
+            if soltype=='SINGLE':
+                if self.main_w.time_set.text()!="Set Time and Position":
+                    self.lat.append(float(sols[1]))
+                    self.lon.append(float(sols[2]))
+                    self.alt.append(float(sols[3]))                    
+                    if len(self.lat) == 50:
+                       # Position Setting
+                       self.lat,ave_lat,se_lat=self.centerd_average(self.lat)
+                       self.lon,ave_lon,se_lon=self.centerd_average(self.lon)
+                       self.alt,ave_alt,se_alt=self.centerd_average(self.alt)
+                       acc_lat,acc_lon,acc_alt = self.calc_accuracy(ave_lat,ave_lon,ave_alt,se_lat,se_lon,se_alt)
+                       print("{},{},{}".format(ave_lon,se_lon,acc_lon))
+                       MainWindow.basepos_lat = str(ave_lat)
+                       MainWindow.basepos_lon = str(ave_lon)
+                       MainWindow.basepos_hgt = str(ave_alt)
+                       # Time setting
+                       fixed_time=re.findall(r'\d+/\d+/\d+ \d+:\d+:\d+',rawsol)[0]
+                       os.system("sudo date -s '" + fixed_time + "'")
+                       self.main_w.time_set.setText("Updated!\n"\
+                                                    "lat:{:.5f}({:.2f})\n"\
+                                                    "lon:{:.5f}({:.2f})\n"\
+                                                    "alt:{:.2f}({:.2f})".format(ave_lat,acc_lat,ave_lon,acc_lon,ave_alt,acc_alt))
+                       marker = L.circleMarker([ave_lat, ave_lon],
+                                                    "{color: '#0000ff',radius:0.5,opacity: 0.5,fillColor: '#0000ff',fillOpacity: 0.5}")
+                       self.markers.addLayer(marker)
+                    return
+
             self.main_w.lSol.setText(soltype)
             if soltype=='SINGLE':
                 self.main_w.lSol.setStyleSheet('color: #ff0000; font-family: Helvetica; font-size: 11pt')
+                marker = L.circleMarker([sols[1], sols[2]],
+                                        "{color: '#ff0000',radius:0.5,opacity: 0.5,fillColor: '#0000ff',fillOpacity: 0.5}")
             if soltype=='FLOAT':
                 self.main_w.lSol.setStyleSheet('color: #ffd700; font-family: Helvetica; font-size: 11pt')
+                marker = L.circleMarker([sols[1], sols[2]],
+                                        "{color: '#ffd700',radius:0.5,opacity: 0.5,fillColor: '#0000ff',fillOpacity: 0.5}")
             if soltype=='FIX':
                 self.main_w.lSol.setStyleSheet('color: #008000; font-family: Helvetica; font-size: 11pt')
+                marker = L.circleMarker([sols[1], sols[2]],
+                                        "{color: '#008000',radius:0.5,opacity: 0.5,fillColor: '#0000ff',fillOpacity: 0.5}")
+            self.markers.addLayer(marker)
             self.main_w.lLat.setText(sols[1])
             self.main_w.lLon.setText(sols[2])
             self.main_w.lAlt.setText(sols[3])
@@ -156,6 +221,7 @@ class MainWindow(QMainWindow):
     
     # Dispaly status in base mode
     def updateBase(self):
+        self.main_w.lTime.setText(datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
         rawstream = self.p.stderr.readline().decode('utf-8')
         print(rawstream)
 
@@ -184,19 +250,29 @@ class MainWidget(QWidget):
         fig=QPixmap(MainWindow.dirtrs+'/img/banner.png')
         bannar=QLabel(self)
         bannar.setPixmap(fig)
+
+        self.lTime=QLabel(datetime.datetime.now().strftime("%Y/%m/%d %H:%M:%S"))
+        self.lTime.setFont(QFont('Helvetica',11))
         self.tabs=QTabWidget()
 
         self.tabRover=QWidget()
         self.tabBase=QWidget()
+        self.tabSetting = QWidget()
+        self.tabMap = QWidget()
 
         self.tabs.addTab(self.tabRover,'Rover')
         self.tabs.addTab(self.tabBase,'Base')
+        self.tabs.addTab(self.tabSetting, 'Setting')
+        self.tabs.addTab(self.tabMap, 'Map')
 
         self.tabRoverUI()
         self.tabBaseUI()
+        self.tabSettingUI()
+        self.tabMapUI()
 
         vbox=QVBoxLayout()
         vbox.addWidget(bannar)
+        vbox.addWidget(self.lTime)
         vbox.addWidget(self.tabs)
         self.setLayout(vbox)
 
@@ -295,7 +371,6 @@ class MainWidget(QWidget):
 
     # Rover config window
     def makeRoverConfig(self):
-        pass
         subWindow=RoverConfigWindow(self)
         subWindow.show()
 
@@ -342,6 +417,93 @@ class MainWidget(QWidget):
         # Show layout
         self.tabBase.setLayout(vbox)
 
+    # Setting tab
+    def tabSettingUI(self):
+        # Set Time button
+        self.time_set = QPushButton('Set Time and Position',self)
+        self.time_set.setCheckable(True)
+        self.time_set.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Expanding)
+        self.time_set.toggled.connect(self.timeSettingToggled)
+        self.time_set.setFont(QFont('Helvetica',16))
+        # Check files button
+        self.checkfiles_set = QPushButton('Check files',self)
+        self.checkfiles_set.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Expanding)
+        self.checkfiles_set.clicked.connect(self.filesCheckingToggled)
+        self.checkfiles_set.setFont(QFont('Helvetica',16))
+        # reboot button
+        self.reboot_set = QPushButton('reboot',self)
+        self.reboot_set.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Expanding)
+        self.reboot_set.clicked.connect(self.rebootToggled)
+        self.reboot_set.setFont(QFont('Helvetica',16))
+        # shutdown button
+        self.shutdown_set = QPushButton('shutdown',self)
+        self.shutdown_set.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Expanding)
+        self.shutdown_set.clicked.connect(self.shutdownToggled)
+        self.shutdown_set.setFont(QFont('Helvetica',16))
+        # Command window
+        self.status_base = QLabel('')
+        self.status_base.setFont(QFont('Helvetica',11))
+        scroll=QScrollArea()
+        scroll.setFrameShape(False)
+        scroll.setWidgetResizable(True)
+        scroll.setFixedHeight(25)
+        scroll.setWidget(self.status_base)
+        # Icon
+        fig=QPixmap(MainWindow.dirtrs+'/img/setting.png')
+        icon=QLabel(self)
+        icon.setPixmap(fig)
+        # Layout
+        hbox1 = QHBoxLayout()
+        hbox2 = QHBoxLayout()
+        vbox = QVBoxLayout()
+        vbox1_1 = QVBoxLayout()
+        #hbox1_1 = QHBoxLayout()
+        hbox1_2 = QHBoxLayout()
+        hbox1_3 = QHBoxLayout()
+        # hbox1
+        hbox1.addSpacing(10)
+        hbox1.addWidget(icon)
+        hbox1.addSpacing(10)
+        hbox1_2.addWidget(self.time_set)
+        hbox1_2.addWidget(self.checkfiles_set)
+        vbox1_1.addLayout(hbox1_2)
+        hbox1_3.addWidget(self.reboot_set)
+        hbox1_3.addWidget(self.shutdown_set)
+        vbox1_1.addLayout(hbox1_3)
+        hbox1.addLayout(vbox1_1)
+
+        # hbox2
+        hbox2.addWidget(scroll)
+        # Add to layout
+        vbox.addLayout(hbox1,1)
+        vbox.addLayout(hbox2)
+        # Show layout
+        self.tabSetting.setLayout(vbox)
+
+    # Map tab
+    def tabMapUI(self):
+        vbox = QVBoxLayout()
+        # reset button
+        self.reset_set = QPushButton('reset',self)
+        self.reset_set.setSizePolicy(QSizePolicy.Expanding,QSizePolicy.Expanding)
+        self.reset_set.clicked.connect(self.resetToggled)
+        self.reset_set.setFont(QFont('Helvetica',16))
+        #map
+        self.mapWidget = MapWidget()
+        # Working with the maps with pyqtlet
+        self.map = L.map(self.mapWidget)
+        self.map.setView([35,135], 18)
+        L.tileLayer('https://cyberjapandata.gsi.go.jp/xyz/ort/{z}/{x}/{y}.jpg',"{maxZoom: 24,maxNativeZoom: 18}").addTo(self.map)
+        self.markers = L.layerGroup()
+        # for i,j in np.random.normal(0,0.00001,(100,2)):
+        #     self.marker = L.circleMarker([35+i,135+j], "{color: '#0000ff',radius:0.5,opacity: 0.5,fillColor: '#0000ff',fillOpacity: 0.5}")
+        #     self.markers.addLayer(self.marker)
+        self.map.addLayer(self.markers)
+        self.show()
+        vbox.addWidget(self.reset_set)
+        vbox.addWidget(self.mapWidget)
+        self.tabMap.setLayout(vbox)
+
     # Base config window
     def makeBaseConfig(self):
         subWindow=BaseConfigWindow(self)
@@ -368,12 +530,16 @@ class MainWidget(QWidget):
     # Start Rover button
     def startRoverToggled(self,checked):
         if checked:
-            self.start_rov.setText('Stop')
+            os.system('pkill rtkrcv')
+            time.sleep(1)
+            starttime = datetime.datetime.now().strftime("%H:%M:%S")
+            self.start_rov.setText("Stop\n{}".format(starttime))
             self.mode_spp.setDisabled(True)
             self.mode_rtks.setDisabled(True)
             self.mode_rtkk.setDisabled(True)
             self.config_rov.setDisabled(True)
             self.tabs.setTabEnabled(1, False)
+            self.tabs.setTabEnabled(2, False)
             exe = MainWindow.dirrtk+'/RTKLIB/app/rtkrcv/gcc/rtkrcv'
 
             optfile='single.conf'
@@ -382,7 +548,9 @@ class MainWidget(QWidget):
             if self.mode_rtkk.isChecked():
                 optfile='kinematic.conf'
 
-            main.p = Popen(exe+' -o '+MainWindow.dirtrs+'/conf/'+optfile+' -p '+str(self.tnport)+' -m 52001', shell=True)
+            main.p = Popen(
+                 exe+' -o '+MainWindow.dirtrs+'/conf/'+optfile+' -p '+str(self.tnport)+' -m 52001',
+                 shell=True,close_fds=True, preexec_fn=os.setsid)
             time.sleep(1)
             self.tn = telnetlib.Telnet('localhost',self.tnport)
 
@@ -418,14 +586,15 @@ class MainWidget(QWidget):
             self.mode_rtkk.setDisabled(False)
             self.config_rov.setDisabled(False)
             self.tabs.setTabEnabled(1, True)
+            self.tabs.setTabEnabled(2, True)
 
             main.rover_timer.stop()
-            main.p.terminate()
-            time.sleep(0.2)
-
+            
             # shutdown
-            self.tn.write('shutdown\r\n'.encode())
+            self.tn.write('stop\r\n'.encode())
             time.sleep(2)
+            os.killpg(main.p.pid, signal.SIGTERM)
+            time.sleep(1)
 
             self.status_rov.setText('')
             self.lSol.setText('')
@@ -436,9 +605,13 @@ class MainWidget(QWidget):
     # Start Base button
     def startBaseToggled(self,checked):
         if checked:
-            self.start_base.setText('Stop')
+            #os.system('pkill str2str')
+            #time.sleep(1)
+            starttime = datetime.datetime.now().strftime("%H:%M:%S")
+            self.start_base.setText("Stop\n{}".format(starttime))
             self.config_base.setDisabled(True)
             self.tabs.setTabEnabled(0, False)
+            self.tabs.setTabEnabled(2, False)
             exe = MainWindow.dirrtk+'/RTKLIB/app/str2str/gcc/str2str'
             rcvcmd =' -c '+MainWindow.ubxcmd
             llhcmd =' -p '+MainWindow.basepos_lat+' '+MainWindow.basepos_lon+' '+MainWindow.basepos_hgt
@@ -451,10 +624,74 @@ class MainWidget(QWidget):
             self.start_base.setText('Start')
             self.config_base.setDisabled(False)
             self.tabs.setTabEnabled(0, True)
+            self.tabs.setTabEnabled(2, True)
             main.p.stderr.close()
             main.base_timer.stop()
             main.p.terminate()
             self.status_base.setText('')
+
+    # Time Setting button
+    def timeSettingToggled(self,checked):
+        if checked:
+            os.system('pkill rtkrcv')
+            time.sleep(1)
+            self.tabs.setTabEnabled(0, False)
+            self.tabs.setTabEnabled(1, False)
+            self.time_set.setText('Searching GPS...')
+            exe = MainWindow.dirrtk + '/RTKLIB/app/rtkrcv/gcc/rtkrcv'
+            optfile = 'single.conf'
+            main.p = Popen(
+                exe + ' -o ' + MainWindow.dirtrs + '/conf/' + optfile + ' -p ' + str(self.tnport) + ' -m 52001',
+                shell=True,close_fds=True, preexec_fn=os.setsid)
+            time.sleep(1)
+            self.tn = telnetlib.Telnet('localhost', self.tnport)
+            # login
+            self.tn.read_until(b'password: ')
+            self.rtkrcvCommand(self.tn, 'admin')
+            # Stream setting
+            itype, iformat, ipath, otype, oformat, opath, ltype, lformat, lpath = self.makeCommandRover()
+            for i, path in enumerate(ipath):
+                self.rtkrcvSetStream(self.tn, 'inpstr' + str(i + 1), itype[i], iformat[i], path)
+
+
+            # Receiver command
+            self.rtkrcvOption(self.tn, 'file-cmdfile1', MainWindow.ubxcmd)
+
+            self.rtkrcvCommand(self.tn, 'start')
+            main.rover_timer.start(1000)
+        else:
+            self.tabs.setTabEnabled(0, True)
+            self.tabs.setTabEnabled(1, True)
+            self.time_set.setText('Set Time and Position')
+            main.rover_timer.stop()
+
+            # shutdown
+            self.tn.write('stop\r\n'.encode())
+            time.sleep(2)
+            os.killpg(main.p.pid, signal.SIGTERM)
+            time.sleep(1)
+
+            self.status_rov.setText('')
+            self.lSol.setText('')
+            self.lLat.setText('')
+            self.lLon.setText('')
+            self.lAlt.setText('')
+
+    # Time Setting button
+    def filesCheckingToggled(self):
+        os.system("pcmanfm /media/pi/USB")
+
+    # reboot button
+    def resetToggled(self):
+        self.markers.clearLayers();
+
+    # reboot button
+    def rebootToggled(self):
+        os.system("sudo reboot")
+
+    # shutdown button
+    def shutdownToggled(self):
+        os.system("sudo shutdown -h now")
 
     # Single button
     def sppToggled(self,checked):
@@ -1166,6 +1403,7 @@ class BasePosConfig_Base(QWidget):
         self.initBasePosUI()
 
     def initBasePosUI(self):
+        print(MainWindow.basepos_hgt)
         self.lat_edit=QLineEdit(MainWindow.basepos_lat)
         self.lon_edit=QLineEdit(MainWindow.basepos_lon)
         self.hgt_edit=QLineEdit(MainWindow.basepos_hgt)
