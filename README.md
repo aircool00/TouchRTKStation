@@ -2,7 +2,7 @@
 This is a work in progress to mod the orginal project from Taroz to use RTKExplorer Demo5 branch of RTKLIB. 
 Also merge some features or updates done by [tmizu23](https://github.com/tmizu23/TouchRTKStation) and 
 [Franklin2](https://github.com/Francklin2/TouchRTKStation) . 
-The main focus is to use the new Ublox F9P/F9T Multi Signal RTK GNSS. We will see where this goes.
+The main focus is to use the new Ublox F9P/F9T Multi frequency RTK GNSS. We will see where this goes.
 
 # TouchRTKStation
 日本語で説明は[**こちら**](https://qiita.com/taroz/items/fe5373848153430bf19d)
