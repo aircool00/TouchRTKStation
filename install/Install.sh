@@ -8,7 +8,7 @@ apt-get update -y
 apt-get install -y qt5-default pyqt5-dev pyqt5-dev-tools
 
 # Install RTKLIB
-git clone -b rtklib_2.4.3 https://github.com/tomojitakasu/RTKLIB.git
+git clone -b demo5 https://github.com/rtklibexplorer/RTKLIB.git
 cd ./RTKLIB/app/str2str/gcc/
 make
 cd ../../rtkrcv/gcc/
