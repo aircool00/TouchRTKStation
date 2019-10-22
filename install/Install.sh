@@ -23,8 +23,10 @@ apt-get install -y qt5-default pyqt5-dev pyqt5-dev-tools raspberrypi-ui-mods
 git clone -b demo5 https://github.com/rtklibexplorer/RTKLIB.git
 cd ./RTKLIB/app/str2str/gcc/
 make
+sudo make install
 cd ../../rtkrcv/gcc/
 make
+sudo make install
 
 # Install LCD Driver
 #cd /home/pi/

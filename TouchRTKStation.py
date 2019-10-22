@@ -374,7 +374,7 @@ class MainWidget(QWidget):
             self.mode_rtkk.setDisabled(True)
             self.config_rov.setDisabled(True)
             self.tabs.setTabEnabled(1, False)
-            exe = MainWindow.dirrtk+'/RTKLIB/app/rtkrcv/gcc/rtkrcv'
+            exe = MainWindow.dirrtk+'rtkrcv'
 
             optfile='single.conf'
             if self.mode_rtks.isChecked():
@@ -439,7 +439,7 @@ class MainWidget(QWidget):
             self.start_base.setText('Stop')
             self.config_base.setDisabled(True)
             self.tabs.setTabEnabled(0, False)
-            exe = MainWindow.dirrtk+'/RTKLIB/app/str2str/gcc/str2str'
+            exe = MainWindow.dirrtk+'str2str'
             rcvcmd =' -c '+MainWindow.ubxcmd
             llhcmd =' -p '+MainWindow.basepos_lat+' '+MainWindow.basepos_lon+' '+MainWindow.basepos_hgt
             rtcmcmd=' -msg 1006(10),1004,1019'
