@@ -1,3 +1,9 @@
+# NOTICE
+This is a work in progress to mod the orginal project from Taroz to use RTKExplorer Demo5 branch of RTKLIB. 
+Also merge some features or updates done by [tmizu23](https://github.com/tmizu23/TouchRTKStation) and 
+[Franklin2](https://github.com/Francklin2/TouchRTKStation) . 
+The main focus is to use the new Ublox F9P/F9T Multi frequency RTK GNSS. We will see where this goes.
+
 # TouchRTKStation
 日本語で説明は[**こちら**](https://qiita.com/taroz/items/fe5373848153430bf19d)
 
@@ -17,7 +23,8 @@
 - Wireless communication devices such as ZigBee can be used
 
 ## Features
-- Using [RTKLIB](https://github.com/tomojitakasu/RTKLIB) for processing GNSS data
+- Using RTKLIBExplorer demo5 fork of [RTKLIB](https://github.com/rtklibexplorer/RTKLIB) for processing GNSS data
+- This project is inspired by [RTKLIB_Touchscreen_GUI](https://github.com/Francklin2/RTKLIB_Touchscreen_GUI)
 - This project is inspired by [RTKLIB_Touchscreen_GUI](https://github.com/Francklin2/RTKLIB_Touchscreen_GUI)
 - To compared with [RTKLIB_Touchscreen_GUI](https://github.com/Francklin2/RTKLIB_Touchscreen_GUI)
   - More smaller (5 inch => 4 inch)
