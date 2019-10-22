@@ -3,8 +3,12 @@
 cd /home/pi/
 
 # Copy Clean Script to /home/pi/
-cp /TouchRTKStation/install/Clean.sh /home/pi/
-chmod +x Clean.sh
+cd TouchRTKStation/install/
+cp Clean-all.sh /home/pi/
+cp Clean-rtklib.sh /home/pi/
+cd ../../
+chmod +x Clean-all.sh
+chmod +x Clean-rtklib.sh
 
 # Update / Upgrade Raspbian Image
 apt-get update -y
